@@ -25,50 +25,76 @@ public class DeviceStatusRepository {
     }
 
     public NetworkData getDeviceStatusSummary(String tableName) {
-        String sql = String.format("""
-            WITH latest_status AS (
-                SELECT
-                    ip,
-                    status,
-                    ROW_NUMBER() OVER (PARTITION BY ip ORDER BY timestamp DESC) AS rn
-                FROM
-                    %s
-                WHERE
-                    timestamp >= CURRENT_DATE
-                    AND timestamp < CURRENT_DATE + INTERVAL '1 day'
-            )
-            SELECT 
-                COUNT(CASE WHEN status = 'UP' THEN 1 END) AS active_devices,
-                COUNT(CASE WHEN status = 'DOWN' THEN 1 END) AS inactive_devices,
-                COUNT(CASE WHEN status IS NULL AND rn IS NULL THEN 1 END) AS no_status_devices
-            FROM 
-                (
-                    SELECT 
-                        ip,
-                        status,
-                        rn
-                    FROM 
-                        latest_status
-                    WHERE rn = 1
-                    UNION ALL
-                    SELECT 
-                        ip,
-                        NULL AS status,
-                        NULL AS rn
-                    FROM 
-                        (SELECT DISTINCT ip FROM %s) AS all_devices
-                    WHERE 
-                        ip NOT IN (SELECT ip FROM latest_status)
-                ) AS combined_status
-            """, tableName, tableName);
+//        String sql = String.format("""
+//            WITH latest_status AS (
+//                SELECT
+//                    ip,
+//                    status,
+//                    ROW_NUMBER() OVER (PARTITION BY ip ORDER BY timestamp DESC) AS rn
+//                FROM
+//                    %s
+//                WHERE
+//                    timestamp <= CURRENT_DATE AND timestamp >= CURRENT_DATE - INTERVAL '180 day'
+//            )
+//            SELECT
+//                COUNT(CASE WHEN status = 'UP' THEN 1 END) AS active_devices,
+//                COUNT(CASE WHEN status = 'DOWN' THEN 1 END) AS inactive_devices,
+//                COUNT(CASE WHEN status IS NULL AND rn IS NULL THEN 1 END) AS no_status_devices
+//            FROM
+//                (
+//                    SELECT
+//                        ip,
+//                        status,
+//                        rn
+//                    FROM
+//                        latest_status
+//                    WHERE rn = 1
+//                    UNION ALL
+//                    SELECT
+//                        ip,
+//                        NULL AS status,
+//                        NULL AS rn
+//                    FROM
+//                        (SELECT DISTINCT ip FROM %s) AS all_devices
+//                    WHERE
+//                        ip NOT IN (SELECT ip FROM latest_status)
+//                ) AS combined_status
+//            """, tableName, tableName);
 
-        return jdbcTemplate.queryForObject(sql, (rs, rowNum) ->
+        String sql2 = String.format("""
+    WITH latest_status AS (
+        SELECT
+            ip,
+            status,
+            ROW_NUMBER() OVER (PARTITION BY ip ORDER BY timestamp DESC) AS rn
+        FROM
+            %s
+    )
+    SELECT 
+        COUNT(CASE WHEN status = 'UP' THEN 1 END) AS active_devices,
+        COUNT(CASE WHEN status = 'DOWN' THEN 1 END) AS inactive_devices,
+        COUNT(CASE WHEN status = 'NULL' THEN 1 END) AS no_status_devices
+        
+    FROM 
+        latest_status
+    WHERE rn = 1
+""", tableName);
+
+        return jdbcTemplate.queryForObject(sql2, (rs, rowNum) ->
                 new NetworkData(
                         rs.getInt("active_devices"),
                         rs.getInt("inactive_devices"),
                         rs.getInt("no_status_devices")
                 )
         );
+
+//        return jdbcTemplate.queryForObject(sql, (rs, rowNum) ->
+//                new NetworkData(
+//                        rs.getInt("active_devices"),
+//                        rs.getInt("inactive_devices"),
+//                        rs.getInt("no_status_devices")
+//                )
+//        );
     }
 
     public List<Logs> getDeviceLogs(String tableName) {
@@ -111,7 +137,7 @@ public class DeviceStatusRepository {
         )
         SELECT
             status, 
-            EXTRACT(EPOCH FROM (NOW() - timestamp))  AS duration_minutes -- Duration in minutes
+            EXTRACT(EPOCH FROM (NOW() - timestamp))  AS duration_minutes
         FROM cte;
     """, tableName);
 
